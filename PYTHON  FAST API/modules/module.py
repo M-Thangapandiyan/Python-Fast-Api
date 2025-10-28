@@ -20,3 +20,4 @@ class Document(DocumentCreate):
     """
     doc_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     s3_url: Optional[str] = None
+    

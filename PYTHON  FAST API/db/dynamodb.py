@@ -17,10 +17,11 @@ class DynamoDBDocumentStorage:
         )
         self.table = self.dynamodb.Table('document')
 
-
     def create_document(self, document: Document) -> Document:
         """Create a new document."""
         try:
+            print(f"pydantic object{document}")
+            print(f"document : == {document.model_dump()}")
             self.table.put_item(Item=document.model_dump())
             return document
         except ClientError as e:
