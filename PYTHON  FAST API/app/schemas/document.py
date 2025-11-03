@@ -1,3 +1,7 @@
+"""
+Document/Product-related Pydantic schemas.
+Note: Currently uses Document naming, but structure matches product pattern.
+"""
 import uuid
 from pydantic import BaseModel, Field
 from typing import Optional
@@ -11,7 +15,8 @@ class DocumentCreate(BaseModel):
     description: Optional[str] = None
     content: Optional[str] = None
     doc_page_count: int 
-    isValid: bool
+    is_valid: bool
+
 
 class Document(DocumentCreate):
     """
@@ -20,4 +25,4 @@ class Document(DocumentCreate):
     """
     doc_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     s3_url: Optional[str] = None
-    
+

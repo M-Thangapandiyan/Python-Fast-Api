@@ -1,64 +1,34 @@
-import boto3
+"""
+S3 storage implementation for document/file storage.
+"""
+
 import json
-from typing import List, Optional
-from config import settings
-from modules.module import Document
-from exception.exceptions import (
+from typing import List
+from app.schemas.document import Document
+from app.db.dynamodb import (
+    ensure_bucket_exists, 
+    get_bucket
+)
+
+from app.core.exceptions import (
     S3UploadError,
     S3ListError,
     UnsupportedFileFormatError,
     DownloadError,
     S3FileNotFoundError
 )
+from app.utils.logger import logger
 
-class S3Storage:
-
-    def __init__(self, auto_create_bucket: bool = True):
-        """
-        Initialize S3 storage.
-        """
-        self.s3 = boto3.client('s3',
-            endpoint_url=settings.S3_ENDPOINT_URL,
-            aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
-            aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
-            region_name=settings.S3_REGION  
-        )
-        self.bucket_name = settings.S3_BUCKET_NAME
-        
-        # Auto-create bucket if it doesn't exist
-        if auto_create_bucket:
-            self.ensure_bucket_exists()
-      
-    def ensure_bucket_exists(self) -> bool:
-        """
-        Ensure the S3 bucket exists. Create it if it doesn't.
-        """
-        try:
-            # Check if bucket exists
-            self.s3.head_bucket(Bucket=self.bucket_name)
-            return True
-        except self.s3.exceptions.ClientError as e:
-            error_code = e.response['Error']['Code']
-            if error_code == '404':
-                # Bucket doesn't exist, create it
-                try:
-                    self.s3.create_bucket(Bucket=self.bucket_name)
-                    return True
-                except Exception as create_error:
-                    print(f"Failed to create bucket: {create_error}")
-                    return False
-            else:
-                return False
-        except Exception as e:
-            return False
+bucket_name = ensure_bucket_exists()    
+s3_client = get_bucket()   
     
-    def create_document_s3(self, document: Document, format: str = "json") -> str:
+            
+def create_document_s3(document: Document, format: str = "json") -> str:
         """
         Create a document in S3 with the specified format.
         """
         try:
             key = f"documents/{document.doc_id}"
-            
             # Prepare content based on format
             if format.lower() == "json":
                 content_dict = {
@@ -67,19 +37,19 @@ class S3Storage:
                     "description": document.description,
                     "content": document.content,
                     "doc_page_count": document.doc_page_count,
-                    "isValid": document.isValid
+                    "is_valid": document.is_valid
                 }
                 
-                body = json.dumps(content_dict, indent=2).encode("utf-8")   # converting as a json
+                body = json.dumps(content_dict, indent=2).encode("utf-8")  
                 content_type = "application/json"
                 
             elif format.lower() in ["text"]:
-                # Store content as plain text
-                body = document.content.encode("utf-8") if isinstance(document.content, str) else document.content
+                body = document.content.encode("utf-8") if isinstance(
+                    document.content, str
+                ) else document.content
                 content_type = "text/plain"
                                 
             else:
-                # Invalid format
                 raise UnsupportedFileFormatError(
                     format=format,
                     supported_formats=['json', 'text'],
@@ -94,8 +64,8 @@ class S3Storage:
             
             # Upload to S3
             try:
-                self.s3.put_object(
-                    Bucket=self.bucket_name,
+                s3_client.put_object(
+                    Bucket=bucket_name,
                     Key=key,
                     Body=body,
                     ContentType=content_type,
@@ -109,7 +79,7 @@ class S3Storage:
                 raise S3UploadError(
                     s3_key=key,
                     reason=str(upload_error),
-                    details={'bucket': self.bucket_name, 'format': format.lower()}
+                    details={'bucket': bucket_name, 'format': format.lower()}
                 )
             
         except Exception as e:
@@ -119,12 +89,15 @@ class S3Storage:
             details={'format': format}
         )
 
-    def list_all_files(self) -> List[dict]:
+def list_all_files() -> List[dict]:
         """
         Retrieve all document file information from S3.
         """
         try:
-            response = self.s3.list_objects_v2(Bucket=self.bucket_name, Prefix="documents/")
+            response = s3_client.list_objects_v2(
+                Bucket=bucket_name,
+                Prefix="documents/"
+            )
                         
             if 'Contents' in response:
                 files = []
@@ -142,15 +115,15 @@ class S3Storage:
             raise S3ListError(
                 prefix="documents/",
                 reason=str(e),
-                details={'bucket': self.bucket_name}
+                details={'bucket': bucket_name}
             )
     
-    def get_file_content(self, key: str) -> dict:
+def get_file_content(key: str) -> dict:
         """
         Download and return the content of a specific file from S3.
         """
         try:
-            file_obj = self.s3.get_object(Bucket=self.bucket_name, Key=key)
+            file_obj = s3_client.get_object(Bucket=bucket_name, Key=key)
             content = file_obj['Body'].read().decode('utf-8')
             file_type = key.split('.')[-1] if '.' in key else None  # finding the file type 
             
@@ -164,27 +137,25 @@ class S3Storage:
                 prefix="documents/",
                 reason=str(e),
                 status_code=404,
-                details={'bucket' : self.bucket_name}
+                details={'bucket' : bucket_name}
             )
     
-    def delete_file(self, key:str) -> bool:
+def delete_file_s3(key: str) -> bool:
         """
         Delete the file in s3
         """
         try:                    
-            self.s3.delete_object(Bucket = self.bucket_name, Key = key) 
+            s3_client.delete_object(Bucket=bucket_name, Key=key) 
             return True
         except Exception as e:
             raise S3FileNotFoundError(
                 s3_key=key,
-                details={'bucket' : self.bucket_name}
+                details={'bucket' : bucket_name}
             )
-            
                     
-    def update_document(self, document: Document, Key:str):
-        
+def update_document_s3(document: Document, Key: str):
         try:
-            self.s3.head_object(Bucket=self.bucket_name, Key= Key)
+            s3_client.head_object(Bucket=bucket_name, Key=Key)
             format = "json" if Key.endswith(".json") else "text" 
             if format == "json":
                 content_dict = {
@@ -193,7 +164,7 @@ class S3Storage:
                     "description": document.description,
                     "content": document.content,
                     "doc_page_count": document.doc_page_count,
-                    "isValid": document.isValid
+                    "is_valid": document.is_valid
                 }
                 
                 json_data = json.dumps(content_dict, indent=2).encode("utf-8")
@@ -202,8 +173,8 @@ class S3Storage:
                 json_data = document.content.encode("utf-8")
                 content_type = "text/plain"
                     
-            self.s3.put_object(
-                Bucket = self.bucket_name,
+            s3_client.put_object(
+                Bucket=bucket_name,
                 Key=Key,
                 Body=json_data,
                 ContentType=content_type,
@@ -213,20 +184,9 @@ class S3Storage:
                 }
             )
             return Key 
-        except Exception as e :
+        except Exception as e:
             raise S3FileNotFoundError(
-                prefix="documents/",
-                reason=str(e),
-                details={'bucket': self.bucket_name}
+                s3_key=Key,
+                 details={'bucket': bucket_name,  "reason" : str(e)}
             )
-                
-                
-                
-                
-                
-                        
-            
-            
-                
-                
-                
+

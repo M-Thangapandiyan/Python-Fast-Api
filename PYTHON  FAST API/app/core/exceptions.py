@@ -1,6 +1,7 @@
 """
-Custom Exception Classes for the Document Service
+Custom Exception Classes for the Application
 """
+from typing import Optional
 
 
 class DocumentServiceException(Exception):
@@ -62,13 +63,22 @@ class UnsupportedFileFormatError(DocumentServiceException):
         self.supported_formats = supported_formats or []
         super().__init__(message, status_code=400, details=details or {})
         
-        
+
 class DownloadError(S3StorageError):
-    def __init__(self, prefix: str = None, reason: str = None, status_code : int = 404, details:dict = None):
-        message = "Download failed"          
+    """Raised when download fails."""
+    
+    def __init__(self, prefix: str = None, reason: str = None, status_code: int = 404, details: dict = None):
+        message = "Download failed"
         if reason:
             message += f": {reason}"
-        super().__init__(message=message, s3_key= prefix, status_code=status_code, details=details or {})
+        super().__init__(message=message, s3_key=prefix, status_code=status_code, details=details or {})
 
 
-
+class InvalidTokenError(Exception):
+    """Raised when token is invalid or expired."""
+    
+    def __init__(self, message: str = "Invalid or expired token", details: dict = None):
+        self.message = message
+        self.status_code = 401
+        self.details = details or {}
+        super().__init__(self.message)
